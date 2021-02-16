@@ -1,0 +1,324 @@
+<!doctype html>
+
+<head>
+  <meta charset="utf-8">
+  <meta content="IE=edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, user-scalable=no">
+  <title>Kerkdriel</title>
+  <link rel="shortcut icon" href="/img/favicon.ico">
+  <!-- get calcite-web css from the cdn (use latest version) -->
+  <link rel="stylesheet"
+    href="https://s3-us-west-1.amazonaws.com/patterns.esri.com/files/calcite-web/1.2.5/css/calcite-web.min.css">
+  <link rel="stylesheet" href="https://js.arcgis.com/4.18/esri/themes/light/main.css">
+
+  <style>
+    html,
+    body {
+      height: 100%;
+
+    }
+
+    #header {
+      height: 60px;
+      padding: 10px 0px 0px 15px;
+
+
+    }
+
+    #bodywrapper {
+      display: block;
+      height: 100%;
+    }
+
+    #mapDiv {
+      height: 100%;
+
+    }
+    #canvas
+    {
+      height:300px;
+    }
+  </style>
+  <script
+    src="https://s3-us-west-1.amazonaws.com/patterns.esri.com/files/calcite-web/1.2.5/js/calcite-web.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.4/dist/Chart.js"></script>
+  <script src="https://js.arcgis.com/4.18/"></script>
+
+  <script>
+    require([
+
+      "esri/WebMap",
+      "esri/Map",
+      "esri/views/MapView",
+      "esri/layers/FeatureLayer",
+      "esri/widgets/TimeSlider",
+
+      "esri/core/watchUtils",
+      "esri/geometry/geometryEngine",
+      "esri/layers/GraphicsLayer"
+    ], function (WebMap, Map, MapView, FeatureLayer, TimeSlider,
+      watchUtils, geometryEngine, GraphicsLayer) {
+      let webmapLayer;
+      let clientLayer;
+      let graphConfig;
+      let graph;
+
+      const webmap = new WebMap({
+        portalItem: { // autocasts as new PortalItem()
+          id: "9d946545a29e48a0936327ee1b6fe6a8"
+        }
+      });
+      // var map = new Map({
+      //           basemap: "topo-vector"
+      //         });
+      //var fl = new FeatureLayer({url:"https://services.arcgis.com/emS4w7iyWEQiulAb/arcgis/rest/services/Rivierengrid_Totaal/FeatureServer/0"});
+      //map.layers.add(fl);
+
+      var view = new MapView({
+        container: "mapDiv",
+        map: webmap,
+        //center: [6.1,52.5],
+        //zoom: 8
+      });
+      view.ui.add(document.getElementById("sidepanel"), "top-right");
+
+      // Create a time slider to update layerView filter
+      var timeSlider = new TimeSlider({
+        container: "timeSliderDiv",
+        mode: "cumulative-from-start",
+      });
+      view.ui.add(timeSlider, "bottom-left");
+
+      //wait for the view to load
+      view.when(() => {
+        webmapLayer = view.map.layers.find((x) => x.title == "Rivierengrid_Totaal");
+        console.log(webmapLayer);
+        // wait until the layer view is loaded
+        let timeLayerView;
+
+
+        // getAllDataFromFeatureLayer(webmapLayer, view.spatialReference.wkid).then((result) => {
+
+        //   console.log("got result", result);
+        // });
+        watchUtils.whenTrueOnce(webmapLayer, "loaded", () => {
+          console.log("layer load completed")
+        });
+        view.whenLayerView(webmapLayer).then(function (layerView) {
+
+
+          loaderStatus(true, "Loading layer");
+          watchUtils.whenFalseOnce(layerView, "updating", function () {
+            loaderStatus(false, "Layer loaded");
+            console.log("whenFalseOnce hooking event");
+            //hook the event //click
+
+            view.on("pointer-move", function (evt) {
+
+              highlightFeature(layerView, view.toMap(evt));
+            });
+          });
+
+          console.log("layerview loaded")
+          timeLayerView = layerView;
+          const fullTimeExtent = webmapLayer.timeInfo.fullTimeExtent;
+          const start = fullTimeExtent.start;
+
+          // set up time slider properties based on layer timeInfo
+          timeSlider.fullTimeExtent = fullTimeExtent;
+          timeSlider.values = [start];
+          timeSlider.stops = {
+            interval: webmapLayer.timeInfo.interval
+          };
+        });
+
+        timeSlider.watch("timeExtent", function (value) {
+          // update layer view filter to reflect current timeExtent
+          timeLayerView.filter = {
+            timeExtent: value
+          };
+        });
+
+
+
+      });
+      function highlightFeature(lview, mappoint) {
+        console.log("start highlight");
+        //create a query to get the area feature
+        let buffGeom = geometryEngine.buffer(mappoint, 10, 'meters');
+        const query = {
+          geometry: buffGeom,
+          returnGeometry: true,
+          outFields: ["*"]
+        };
+        //query the layerview (that holds all the data on the client)
+        lview.queryFeatures(query).then((response) => {
+          console.log(`nrof features: ${response.features.length}`);
+          //clear the graphics layer
+          if (response.features.length > 0) {
+            var features = response.features
+            features.sort(function(a,b){
+              return a.attributes.T - b.attributes.T;
+            })
+            var labels = []
+            var data = []
+            for (var i in features) {
+              feature = features[i]
+              //labels.push(feature.attributes.T/1000)
+              //labels.push()
+              d = new Date(feature.attributes.T)
+              label = d.getDate() + "-"+(d.getMonth()+1)+" " + d.getHours()+":"+d.getMinutes()
+              console.log(label)
+              labels.push(label);
+              data.push(feature.attributes.D)
+              
+            }
+            createGraph(labels,data)
+            console.log(data);
+          }
+
+        });
+      }
+      function createGraph(labels, data) {
+        
+        if(!graph)
+        {
+          graphConfig = {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Rivierengrid_Totaal',
+              backgroundColor: 'rgb(0, 99, 132)',
+              borderColor: 'rgb(0, 99, 132)',
+              data: data,
+              fill: false,
+            },]
+          },
+          options: {
+            responsive: true,
+            title: {
+              display: true,
+              text: 'Rivierengrid_Totaal'
+            },
+            tooltips: {
+              mode: 'index',
+              intersect: false,
+            },
+            hover: {
+              mode: 'nearest',
+              intersect: true
+            },
+            scales: {
+              xAxes: [{
+                display: true,
+                scaleLabel: {
+                  display: true,
+                  labelString: 'Time'
+                }
+              }],
+              yAxes: [{
+                display: true,
+                scaleLabel: {
+                  display: true,
+                  labelString: 'Diepte'
+                },
+                ticks: {
+                    suggestedMin: 0,
+                    suggestedMax: 3
+                }
+              }]
+            }
+          }
+        };
+        var ctx = document.getElementById('canvas').getContext('2d');
+        graph = new Chart(ctx, graphConfig);
+        }
+        else
+        {
+          graphConfig.data.datasets[0].data = data
+          graph.update()
+        }
+      }
+      function getAllDataFromFeatureLayer(fLayer, outSrWkid) {
+        return new Promise(resolve => {
+          // First, get the count of all features...
+          fLayer.queryFeatureCount().then((resultCount) => {
+            count = 250;
+            features = []
+            loaderStatus(true, `featurecount ${resultCount}`);
+            nrOfRequests = Math.ceil(resultCount / count)
+            for (i = 0; i < nrOfRequests; i++) {
+              j = 0
+
+              var query = { num: count, start: i * count, returnGeometry: true, outSpatialReference: { wkid: outSrWkid }, outFields: "*" }
+              fLayer.queryFeatures(query).then((resultFeatures) => {
+
+                features = features.concat(resultFeatures.features)
+                loaderStatus(true, `got features ${features.length} from ${resultCount}`)
+                j = j + 1
+                if (j === nrOfRequests) {
+                  var newgraphics = features.map(f => new Graphic({ attributes: f.attributes, geometry: f.geometry }));
+                  resolve(newgraphics);
+                }
+              });
+            }
+          })
+
+        })
+      };
+      function loaderStatus(status, msg) {
+        var loader = document.getElementById("loader");
+        document.getElementById("loaderText").innerHTML = msg;
+        if (status) {
+          loader.classList.add("is-active");
+
+        }
+        else {
+          loader.classList.remove("is-active");
+        }
+
+      }
+
+    });
+  </script>
+</head>
+
+<body>
+
+  <!-- header -->
+  <div id="header" class="panel-dark-blue">
+    <h2>Kerkdriel</h2>
+  </div>
+
+  <!-- content of page -->
+  <div id="bodywrapper">
+    <div id="sidepanel" class="panel">MyPanel
+      <br />
+      <div class="loader padding-leader-3 padding-trailer-3" id="loader">
+        <div class="loader-bars"></div>
+        <div class="loader-text" id="loaderText">Loading...</div>
+      </div>
+      <div id="chartDiv"><canvas id="canvas"></canvas></div>
+
+    </div>
+    <div id="timeSliderDiv">Time</div>
+    <div id="mapDiv"></div>
+
+
+  </div>
+  </div>
+  <div class="footer" role="contentinfo">
+    <!-- content of footer -->
+  </div>
+
+  <!-- get calcite-web js from the cdn (use latest version) -->
+
+
+  <!-- interactive patterns need to be initialized -->
+  <script>
+    calcite.init()
+  </script>
+</body>
+
+</html>
