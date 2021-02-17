@@ -1,0 +1,402 @@
+<!doctype html>
+
+<head>
+  <meta charset="utf-8">
+  <meta content="IE=edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, user-scalable=no">
+  <title>Kerkdriel 2</title>
+  <!-- <link rel="shortcut icon" href="/img/favicon.ico"> -->
+  <!-- get calcite-web css from the cdn (use latest version) -->
+  <link rel="stylesheet"
+    href="https://s3-us-west-1.amazonaws.com/patterns.esri.com/files/calcite-web/1.2.5/css/calcite-web.min.css">
+  <link rel="stylesheet" href="https://js.arcgis.com/4.18/esri/themes/light/main.css">
+
+  <style>
+    html,
+    body {
+      height: 100%;
+
+    }
+
+    #header {
+      height: 60px;
+      padding: 10px 0px 0px 15px;
+
+
+    }
+
+    #bodywrapper {
+      display: block;
+      height: 100%;
+    }
+
+    #mapDiv {
+      height: 100%;
+
+    }
+
+    #canvas {
+      height: 300px;
+    }
+
+    #subtitle
+    { 
+      font-size: 10px;
+
+    }
+  </style>
+  <script
+    src="https://s3-us-west-1.amazonaws.com/patterns.esri.com/files/calcite-web/1.2.5/js/calcite-web.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.4/dist/Chart.js"></script>
+  <script src="https://js.arcgis.com/4.18/"></script>
+
+  <script>
+    require([
+
+      "esri/WebMap",
+      "esri/Map",
+      "esri/views/MapView",
+      "esri/layers/FeatureLayer",
+      "esri/widgets/TimeSlider",
+
+      "esri/core/watchUtils",
+      "esri/geometry/geometryEngine",
+      "esri/layers/GraphicsLayer"
+    ], function (WebMap, Map, MapView, FeatureLayer, TimeSlider,
+      watchUtils, geometryEngine, GraphicsLayer) {
+      let webmapLayer;
+      let clientLayer;
+      let graphConfig;
+      let graph;
+
+      // const pointLayer = new FeatureLayer({
+      //       title: "Points",
+      //       copyright: `[c] MHV`,
+      //       portalItem: {
+      //         id: "9ff162e1ea1a4885acd8c4ceeab588a5"
+      //       },
+      //       outFields: ["*"],
+      //       popupEnabled: false
+      //     });
+
+      // const webmap = new WebMap({
+      //   portalItem: { // autocasts as new PortalItem()
+      //     id: "73c244876722428ca58c5cac5da7fa43"
+      //   }
+
+      // });
+
+      var map = new Map({
+        basemap: "topo-vector"
+      });
+      var fl = new FeatureLayer({
+        url: "https://services.arcgis.com/emS4w7iyWEQiulAb/arcgis/rest/services/Transpose_Kerkdriel/FeatureServer/0", outFields: ["*"],
+        popupEnabled: false
+      });
+      map.layers.add(fl);
+      var renderer = fl.renderer;
+      var view = new MapView({
+        container: "mapDiv",
+        map: map,
+        center: [5.313941, 51.772115],
+        zoom: 13
+      });
+      view.ui.add(document.getElementById("sidepanel"), "top-right");
+
+      // Create a time slider to update layerView filter
+      // var timeSlider = new TimeSlider({
+      //   container: "timeSliderDiv",
+      //   mode: "cumulative-from-start",
+      // });
+      view.ui.add(document.getElementById("timeSliderDiv"), "bottom-left");
+
+      //wait for the view to load
+      view.when(() => {
+        webmapLayer = fl;//view.map.layers.find((x) => x.title == "Transpose_Kerkdriel");
+        console.log(webmapLayer);
+        // wait until the layer view is loaded
+        let timeLayerView;
+
+
+        // getAllDataFromFeatureLayer(webmapLayer, view.spatialReference.wkid).then((result) => {
+
+        //   console.log("got result", result);
+        // });
+        watchUtils.whenTrueOnce(webmapLayer, "loaded", () => {
+          console.log("layer load completed")
+        });
+        view.whenLayerView(webmapLayer).then(function (layerView) {
+
+
+          loaderStatus(true, "Loading layer");
+          watchUtils.whenFalseOnce(layerView, "updating", function () {
+            loaderStatus(false, "Layer loaded");
+            console.log("whenFalseOnce hooking event");
+            //hook the event //click
+
+            view.on("pointer-move", function (evt) {
+
+              highlightFeature(layerView, view.toMap(evt));
+            });
+
+            document.getElementById("timeSlider").addEventListener("input", (evt) => {
+
+              //console.log(evt.target.value)
+              renderField = "T" + evt.target.value;
+
+              r = {
+                type: "simple",
+                symbol: {
+                  type: "simple-marker",
+                  size: 4,
+                  outline: {
+                    width: 0,
+                    color: [255, 255, 255, 0.5]
+                  }
+                },
+                visualVariables: [{
+                  type: "color",
+                  legendOptions: {
+                    title: "Depth",
+                    showLegend: true
+                  },
+                  field: renderField,
+                  stops: [
+                    {
+                      "color": [
+                        230,
+                        245,
+                        250,
+                        255
+                      ],
+                      "label": "< 0.9",
+                      "value": 0.9
+                    },
+                    {
+                      "color": [
+                        150,
+                        184,
+                        254,
+                        255
+                      ],
+                      "value": 1.18
+                    },
+                    {
+                      "color": [
+                        86,
+                        134,
+                        255,
+                        255
+                      ],
+                      "label": "1.46",
+                      "value": 1.46
+                    },
+                    {
+                      "color": [
+                        78,
+                        109,
+                        189,
+                        255
+                      ],
+                      "value": 1.77
+                    },
+                    {
+                      "color": [
+                        69,
+                        83,
+                        122,
+                        255
+                      ],
+                      "label": "> 2.07",
+                      "value": 2.07
+                    }
+                  ]
+                }]
+              }
+            
+              console.log("Setting rendering to field: ", r.field)
+              fl.renderer = r;
+
+          });
+        });
+
+        console.log("layerview loaded")
+        // timeLayerView = layerView;
+        // const fullTimeExtent = webmapLayer.timeInfo.fullTimeExtent;
+        // const start = fullTimeExtent.start;
+
+        // // set up time slider properties based on layer timeInfo
+        // timeSlider.fullTimeExtent = fullTimeExtent;
+        // timeSlider.values = [start];
+        // timeSlider.stops = {
+        //   interval: webmapLayer.timeInfo.interval
+        // };
+      });
+
+      // timeSlider.watch("timeExtent", function (value) {
+      //   // update layer view filter to reflect current timeExtent
+      //   timeLayerView.filter = {
+      //     timeExtent: value
+      //   };
+      // });
+
+
+
+    });
+    function highlightFeature(lview, mappoint) {
+      console.log("start highlight");
+      //create a query to get the area feature
+      let buffGeom = geometryEngine.buffer(mappoint, 10, 'meters');
+      const query = {
+        geometry: buffGeom,
+        returnGeometry: true,
+        outFields: ["*"]
+      };
+      //query the layerview (that holds all the data on the client)
+      lview.queryFeatures(query).then((response) => {
+        console.log(`nrof features: ${response.features.length}`);
+        //clear the graphics layer
+        if (response.features.length > 0) {
+          var feature = response.features[0]
+
+          var labels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48]
+          var data = []
+          for (var i in labels) {
+
+            val = feature.attributes[`T${i}`]
+            if (!val) {
+              val = 0
+            }
+            data.push(val)
+
+          }
+          createGraph(labels, data)
+          console.log(data);
+        }
+
+      });
+    }
+    function createGraph(labels, data) {
+
+      if (!graph) {
+        graphConfig = {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Rivierengrid_Totaal',
+              backgroundColor: 'rgb(0, 99, 132)',
+              borderColor: 'rgb(0, 99, 132)',
+              data: data,
+              fill: false,
+            },]
+          },
+          options: {
+            responsive: true,
+            title: {
+              display: true,
+              text: 'Rivierengrid_Totaal'
+            },
+            tooltips: {
+              mode: 'index',
+              intersect: false,
+            },
+            hover: {
+              mode: 'nearest',
+              intersect: true
+            },
+            scales: {
+              xAxes: [{
+                display: true,
+                scaleLabel: {
+                  display: true,
+                  labelString: 'Time'
+                }
+              }],
+              yAxes: [{
+                display: true,
+                scaleLabel: {
+                  display: true,
+                  labelString: 'Diepte'
+                },
+                ticks: {
+                  suggestedMin: 0,
+                  suggestedMax: 3
+                }
+              }]
+            }
+          }
+        };
+        var ctx = document.getElementById('canvas').getContext('2d');
+        graph = new Chart(ctx, graphConfig);
+      }
+      else {
+        graphConfig.data.datasets[0].data = data
+        graph.update()
+      }
+    }
+
+    function loaderStatus(status, msg) {
+      var loader = document.getElementById("loader");
+      document.getElementById("loaderText").innerHTML = msg;
+      if (status) {
+        loader.classList.add("is-active");
+
+      }
+      else {
+        loader.classList.remove("is-active");
+      }
+
+    }
+
+    });
+  </script>
+</head>
+
+<body>
+
+  <!-- header -->
+  <div id="header" class="panel-dark-blue">
+    <h2>Kerkdriel 2</h2>
+  </div>
+
+  <!-- content of page -->
+  <div id="bodywrapper">
+    <div id="sidepanel" class="panel">MyPanel
+      <br />
+      <div class="loader padding-leader-3 padding-trailer-3" id="loader">
+        <div class="loader-bars"></div>
+        <div class="loader-text" id="loaderText">Loading...</div>
+      </div>
+      <div id="chartDiv"><canvas id="canvas"></canvas></div>
+
+    </div>
+    <div id="timeSliderDiv" class="panel">
+      <form class="calcite-slider" id="example1">
+        <label>
+          Time
+          <input type="range" min="0" max="48" value="10" step="1" aria-valuemin="0" aria-valuemax="48"
+            aria-valuenow="10" id="timeSlider">
+        </label>
+      </form>
+    </div>
+    <div id="mapDiv"></div>
+
+
+  </div>
+  </div>
+  <div class="footer" role="contentinfo">
+    <!-- content of footer -->
+    <div id="subtitle">Created by MVH (Esri Nederland) - Thx Kristian Ekene</div>
+  </div>
+
+  <!-- get calcite-web js from the cdn (use latest version) -->
+
+
+  <!-- interactive patterns need to be initialized -->
+  <script>
+    calcite.init()
+  </script>
+</body>
+
+</html>
